@@ -347,6 +347,28 @@ rm -rf /etc/warp
 **"Access denied"**
 → Right-click PowerShell → "Run as Administrator"
 
+### WSL (Windows Subsystem for Linux)
+
+> ⚠️ **WSL is NOT recommended.** Use the PowerShell version (`warp-rotate.ps1`) instead.
+
+WSL has several limitations that make WARP tunneling unreliable:
+
+1. **No WireGuard kernel module** — WSL doesn't include the WireGuard kernel module, so `wg-quick up` will fail
+2. **File path issues** — `wgcf` may write config files to unexpected locations
+3. **No persistent `/etc/wireguard/`** — WSL filesystem may reset on restart
+
+**If you must use WSL:**
+- Install `wireguard-go` (userspace WireGuard implementation)
+- Or use `boringtun` as a userspace alternative
+- Make sure to run as root (`sudo bash warp-rotate.sh`)
+
+**Recommended for Windows users:**
+```powershell
+# Use the PowerShell version instead
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ocdewe/warp-rotate/main/warp-rotate.ps1" -OutFile "warp-rotate.ps1"
+.\warp-rotate.ps1 -Setup
+```
+
 ### Both
 
 **IP didn't change after rotation**
