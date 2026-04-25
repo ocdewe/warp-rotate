@@ -46,26 +46,62 @@ chmod +x warp.sh
 
 ### 2. Install Dependencies
 
-```bash
-# Install WireGuard tools
-apt install wireguard-tools -y
+You need two tools: **wireguard-tools** and **wgcf**.
 
-# Install wgcf (WARP account manager)
+#### Option A: Manual install (recommended)
+
+```bash
+# 1. Install WireGuard tools
+apt update && apt install wireguard-tools -y
+
+# 2. Install wgcf (Cloudflare WARP account manager)
 curl -fsSL git.io/wgcf.sh | bash
+
+# 3. Verify
+wg --version
+wgcf --version
 ```
 
-Or use the included `warp.sh` installer:
+#### Option B: Use the included `warp.sh` (interactive menu)
 
 ```bash
-# Interactive menu — install WireGuard + WARP
-bash warp.sh
+# Run the Cloudflare WARP installer (interactive)
+sudo bash warp.sh
 ```
+
+`warp.sh` provides a menu to:
+- Install Cloudflare WARP Client
+- Install WireGuard + wgcf
+- Connect/disconnect WARP (IPv4, IPv6, or Dual Stack)
+- Enable WARP proxy mode (SOCKS5)
+- Uninstall everything
+
+```
+ ============================================
+  Cloudflare WARP Installer
+ ============================================
+  1. Install WARP Client
+  2. Install WireGuard
+  3. WARP IPv4
+  4. WARP IPv6
+  5. WARP Dual Stack
+  6. WARP Proxy (SOCKS5)
+  7. Disconnect WARP
+  8. Uninstall
+  0. Exit
+ ============================================
+```
+
+> 💡 If you only need `warp-rotate.sh`, Option A is enough. `warp.sh` is included as a convenience for full WARP setup.
 
 ### 3. First Run
 
 ```bash
 # Rotate IP (register new account + connect)
 sudo ./warp-rotate.sh
+
+# Verify your new IP
+sudo ./warp-rotate.sh --check
 ```
 
 ---
