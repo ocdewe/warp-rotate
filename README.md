@@ -93,9 +93,9 @@ This will:
 
 After running, verify in the enowxai dashboard:
 ```
-http://localhost:1431
+http://localhost:1431/proxy
 ```
-Go to the **Proxy** section to confirm WARP proxy is listed and status is `ok`.
+Confirm WARP proxy is listed and status is `ok`.
 
 ### Rollback (Restore Old Proxies)
 
@@ -223,7 +223,7 @@ curl -x socks5://127.0.0.1:40000 https://ifconfig.me
 sudo ./warp-rotate.sh --enowxai-clear
 
 # 6. Check enowxai dashboard
-#    Open http://localhost:1431 → Proxy section
+#    Open http://localhost:1431/proxy
 #    Should show: socks5://127.0.0.1:40000 → status: ok
 
 # 7. (Optional) Auto-rotate every hour
