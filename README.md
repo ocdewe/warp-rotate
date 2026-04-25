@@ -18,7 +18,7 @@ Rotate your public IP address using Cloudflare WARP for free. Useful for bypassi
 ### Step 1: Download
 
 ```bash
-git clone https://github.com/ochpgit/warp-rotate.git
+git clone https://github.com/ocdewe/warp-rotate.git
 cd warp-rotate
 chmod +x warp.sh warp-rotate.sh
 ```
@@ -26,8 +26,8 @@ chmod +x warp.sh warp-rotate.sh
 Or download individual files:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ochpgit/warp-rotate/main/warp.sh -o warp.sh
-curl -fsSL https://raw.githubusercontent.com/ochpgit/warp-rotate/main/warp-rotate.sh -o warp-rotate.sh
+curl -fsSL https://raw.githubusercontent.com/ocdewe/warp-rotate/main/warp.sh -o warp.sh
+curl -fsSL https://raw.githubusercontent.com/ocdewe/warp-rotate/main/warp-rotate.sh -o warp-rotate.sh
 chmod +x warp.sh warp-rotate.sh
 ```
 
