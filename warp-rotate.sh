@@ -39,6 +39,13 @@ ENDPOINTS=(
     "162.159.193.7:2408"
 )
 
+# Timing
+DELAY_BEFORE_REGISTER=3    # Jeda sebelum register account baru
+DELAY_AFTER_REGISTER=2     # Jeda setelah register (propagasi)
+HANDSHAKE_TIMEOUT=30       # Max tunggu handshake (detik)
+HANDSHAKE_CHECK_INTERVAL=3 # Interval cek handshake
+MIN_ROTATE_INTERVAL=7200   # Minimum interval auto-rotate (2 jam)
+
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') ${LOG_PREFIX} $*"
 }
@@ -129,6 +136,28 @@ warp_up() {
     # Restore DNS agar SSH/Tailscale tidak terganggu
     cp /etc/resolv.conf.bak.warp /etc/resolv.conf 2>/dev/null || true
     log "✅ WARP tunnel active"
+}
+
+wait_handshake() {
+    log "Waiting for WireGuard handshake (max ${HANDSHAKE_TIMEOUT}s)..."
+    local elapsed=0
+    while [[ $elapsed -lt $HANDSHAKE_TIMEOUT ]]; do
+        # Cek apakah ada data received (handshake berhasil)
+        local received
+        received=$(wg show "$WG_INTERFACE" 2>/dev/null | grep "transfer:" | grep -oP '\d+ [A-Za-z]+ received' | grep -oP '^\d+')
+        
+        if [[ -n "$received" && "$received" -gt 0 ]]; then
+            log "✅ Handshake successful (${elapsed}s)"
+            return 0
+        fi
+        
+        sleep "$HANDSHAKE_CHECK_INTERVAL"
+        elapsed=$((elapsed + HANDSHAKE_CHECK_INTERVAL))
+        log "  Waiting... ${elapsed}/${HANDSHAKE_TIMEOUT}s"
+    done
+    
+    log "⚠️ Handshake timeout after ${HANDSHAKE_TIMEOUT}s — tunnel may not work"
+    return 1
 }
 
 register_new_account() {
@@ -301,10 +330,15 @@ do_setup() {
 
     # Register + config
     register_new_account
+    log "Waiting ${DELAY_AFTER_REGISTER}s for account propagation..."
+    sleep "$DELAY_AFTER_REGISTER"
     patch_profile
 
     # Start tunnel
     warp_up
+
+    # Wait for handshake
+    wait_handshake
 
     # Start SOCKS5 proxy
     proxy_start
@@ -334,12 +368,33 @@ do_rotate() {
     proxy_stop
     warp_down
 
+    # Jeda sebelum register (biar Cloudflare tidak throttle)
+    log "Waiting ${DELAY_BEFORE_REGISTER}s before re-register..."
+    sleep "$DELAY_BEFORE_REGISTER"
+
     # Re-register
     register_new_account
+
+    # Jeda setelah register (propagasi account)
+    log "Waiting ${DELAY_AFTER_REGISTER}s for account propagation..."
+    sleep "$DELAY_AFTER_REGISTER"
+
     patch_profile
 
-    # Start tunnel + proxy
+    # Start tunnel
     warp_up
+
+    # Wait for handshake
+    if ! wait_handshake; then
+        log "Retrying with different endpoint..."
+        warp_down
+        sleep 2
+        patch_profile  # Pick new random endpoint
+        warp_up
+        wait_handshake || log "ERROR: Handshake failed on retry"
+    fi
+
+    # Start proxy
     proxy_start
 
     sleep 2
@@ -350,9 +405,9 @@ do_rotate() {
     if [[ -n "$old_warp_ip" && "$old_warp_ip" != "$new_warp_ip" && -n "$new_warp_ip" ]]; then
         log "✅ IP rotated: $old_warp_ip → $new_warp_ip"
     elif [[ -n "$new_warp_ip" ]]; then
-        log "⚠️ IP: $new_warp_ip (mungkin sama, Cloudflare assign server yang sama)"
+        log "✅ WARP active — IP: $new_warp_ip"
     else
-        log "❌ Gagal mendapatkan IP baru"
+        log "❌ Gagal mendapatkan IP baru. Coba lagi nanti."
     fi
 }
 
@@ -393,11 +448,18 @@ do_status() {
 }
 
 do_loop() {
-    local interval="${1:-3600}"
-    log "Auto-rotate mode: setiap ${interval} detik"
+    local interval="${1:-7200}"
+    
+    # Enforce minimum interval
+    if [[ $interval -lt $MIN_ROTATE_INTERVAL ]]; then
+        log "⚠️ Interval ${interval}s too short. Minimum: ${MIN_ROTATE_INTERVAL}s ($(($MIN_ROTATE_INTERVAL/3600))h)"
+        interval=$MIN_ROTATE_INTERVAL
+    fi
+    
+    log "Auto-rotate mode: setiap ${interval} detik ($((interval/3600))h $((interval%3600/60))m)"
     while true; do
         do_rotate
-        log "Next rotation in ${interval} seconds..."
+        log "Next rotation in ${interval} seconds ($((interval/3600))h $((interval%3600/60))m)..."
         sleep "$interval"
     done
 }
