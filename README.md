@@ -6,9 +6,10 @@ Rotate your public IP address using Cloudflare WARP for free. Works as a **SOCKS
 
 ## What's Included
 
-| File | Description |
-|------|-------------|
-| `warp-rotate.sh` | All-in-one: setup, rotate, SOCKS5 proxy, enowxai integration |
+| File | Platform | Description |
+|------|----------|-------------|
+| `warp-rotate.sh` | Linux | All-in-one: setup, rotate, SOCKS5 proxy, enowxai integration |
+| `warp-rotate.ps1` | Windows | PowerShell version with same features |
 
 ---
 
@@ -234,15 +235,83 @@ sudo ./warp-rotate.sh --loop 3600
 
 ## Requirements
 
-- Linux (Debian/Ubuntu/CentOS/Fedora/Arch)
+### Linux
+- Debian/Ubuntu/CentOS/Fedora/Arch
 - Root access
 - `curl`, `git`, `make`, `gcc` (for building microsocks)
+
+### Windows
+- Windows 10/11
+- [WireGuard for Windows](https://www.wireguard.com/install/)
+- Run PowerShell as Administrator
+
+---
+
+## Windows Quick Start
+
+### Step 1: Install WireGuard
+
+Download and install from: https://www.wireguard.com/install/
+
+### Step 2: Download Script
+
+```powershell
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ocdewe/warp-rotate/main/warp-rotate.ps1" -OutFile "warp-rotate.ps1"
+```
+
+### Step 3: Setup (Run as Administrator)
+
+```powershell
+.\warp-rotate.ps1 -Setup
+```
+
+This will:
+1. Download `wgcf.exe` and `microsocks.exe` automatically
+2. Register a free Cloudflare WARP account
+3. Create WireGuard tunnel config
+4. Start WARP tunnel via WireGuard
+5. Start SOCKS5 proxy on `127.0.0.1:40000`
+
+### Step 4: Usage
+
+```powershell
+# Rotate IP
+.\warp-rotate.ps1 -Rotate
+
+# Check IPs
+.\warp-rotate.ps1 -Check
+
+# Full status
+.\warp-rotate.ps1 -Status
+
+# Auto-rotate every hour
+.\warp-rotate.ps1 -Loop 3600
+
+# Stop everything
+.\warp-rotate.ps1 -Down
+
+# Start everything
+.\warp-rotate.ps1 -Up
+
+# enowxai: replace proxies with WARP
+.\warp-rotate.ps1 -EnowxaiClear
+```
+
+### Step 5: Verify
+
+```powershell
+# Normal IP
+curl https://ifconfig.me
+
+# WARP IP (should be different)
+curl -x socks5://127.0.0.1:40000 https://ifconfig.me
+```
 
 ---
 
 ## Troubleshooting
 
-**"wgcf: command not found"**
+**"wgcf: command not found"** (Linux)
 → Run `curl -fsSL git.io/wgcf.sh | bash`
 
 **"wireguard-tools not found"**
