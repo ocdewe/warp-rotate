@@ -6,25 +6,16 @@ Rotate your public IP address using Cloudflare WARP for free. Useful for bypassi
 
 | File | Description |
 |------|-------------|
-| `warp-rotate.sh` | IP rotation script — auto re-register WARP account for new IP |
-| `warp.sh` | Cloudflare WARP installer by [P3TERX](https://github.com/P3TERX/warp.sh) (MIT License) |
+| `warp.sh` | **Step 1** — Cloudflare WARP installer (install WireGuard + wgcf) |
+| `warp-rotate.sh` | **Step 2** — IP rotation script (auto re-register for new IP) |
 
-## How It Works
-
-1. Stops the current WARP tunnel
-2. Deletes the old WARP account
-3. Registers a new free WARP account
-4. Generates a new WireGuard profile
-5. Picks a random Cloudflare endpoint (for IP variation)
-6. Starts the tunnel with the new account → **new public IP**
-
-Uses a **separate routing table (51888)** so your main routing, SSH, Tailscale, and other services are **not affected**.
+> ⚠️ You **must** run `warp.sh` first to install the required tools before using `warp-rotate.sh`.
 
 ---
 
 ## Quick Start
 
-### 1. Download
+### Step 1: Download
 
 ```bash
 git clone https://github.com/ochpgit/warp-rotate.git
@@ -35,46 +26,18 @@ chmod +x warp.sh warp-rotate.sh
 Or download individual files:
 
 ```bash
-# warp-rotate.sh only
-curl -fsSL https://raw.githubusercontent.com/ochpgit/warp-rotate/main/warp-rotate.sh -o warp-rotate.sh
-chmod +x warp-rotate.sh
-
-# warp.sh only
 curl -fsSL https://raw.githubusercontent.com/ochpgit/warp-rotate/main/warp.sh -o warp.sh
-chmod +x warp.sh
+curl -fsSL https://raw.githubusercontent.com/ochpgit/warp-rotate/main/warp-rotate.sh -o warp-rotate.sh
+chmod +x warp.sh warp-rotate.sh
 ```
 
-### 2. Install Dependencies
-
-You need two tools: **wireguard-tools** and **wgcf**.
-
-#### Option A: Manual install (recommended)
+### Step 2: Install WARP (run `warp.sh` first!)
 
 ```bash
-# 1. Install WireGuard tools
-apt update && apt install wireguard-tools -y
-
-# 2. Install wgcf (Cloudflare WARP account manager)
-curl -fsSL git.io/wgcf.sh | bash
-
-# 3. Verify
-wg --version
-wgcf --version
-```
-
-#### Option B: Use the included `warp.sh` (interactive menu)
-
-```bash
-# Run the Cloudflare WARP installer (interactive)
 sudo bash warp.sh
 ```
 
-`warp.sh` provides a menu to:
-- Install Cloudflare WARP Client
-- Install WireGuard + wgcf
-- Connect/disconnect WARP (IPv4, IPv6, or Dual Stack)
-- Enable WARP proxy mode (SOCKS5)
-- Uninstall everything
+This opens an interactive menu:
 
 ```
  ============================================
@@ -92,24 +55,50 @@ sudo bash warp.sh
  ============================================
 ```
 
-> 💡 If you only need `warp-rotate.sh`, Option A is enough. `warp.sh` is included as a convenience for full WARP setup.
+**Choose option `2` (Install WireGuard)** — this installs:
+- `wireguard-tools` (WireGuard tunnel manager)
+- `wgcf` (Cloudflare WARP account manager)
 
-### 3. First Run
+Then choose option `3`, `4`, or `5` to connect WARP for the first time.
+
+**Verify installation:**
 
 ```bash
-# Rotate IP (register new account + connect)
-sudo ./warp-rotate.sh
-
-# Verify your new IP
-sudo ./warp-rotate.sh --check
+wg --version          # Should show wireguard-tools version
+wgcf --version        # Should show wgcf version
 ```
+
+### Step 3: Rotate IP (run `warp-rotate.sh`)
+
+Now you can rotate your IP:
+
+```bash
+sudo ./warp-rotate.sh
+```
+
+---
+
+## How It Works
+
+```
+warp.sh (run once)          warp-rotate.sh (run anytime)
+─────────────────           ────────────────────────────
+Install WireGuard    →      1. Stop WARP tunnel
+Install wgcf         →      2. Delete old WARP account
+First WARP connect   →      3. Register NEW free account
+                             4. Generate new WireGuard config
+                             5. Pick random Cloudflare endpoint
+                             6. Start tunnel → NEW IP
+```
+
+Uses a **separate routing table (51888)** so your main routing, SSH, Tailscale, and other services are **not affected**.
 
 ---
 
 ## Usage
 
 ```bash
-# Rotate IP once (delete old account → register new → reconnect)
+# Rotate IP once
 sudo ./warp-rotate.sh
 
 # Check current public IP
@@ -118,7 +107,7 @@ sudo ./warp-rotate.sh --check
 # Check WARP status (tunnel, IP, config)
 sudo ./warp-rotate.sh --status
 
-# Auto-rotate every 1 hour (3600 seconds)
+# Auto-rotate every 1 hour
 sudo ./warp-rotate.sh --loop 3600
 
 # Auto-rotate every 30 minutes
@@ -160,11 +149,27 @@ Each rotation:
 
 ## Requirements
 
-- Linux (Debian/Ubuntu/CentOS/Fedora)
+- Linux (Debian/Ubuntu/CentOS/Fedora/Arch)
 - Root access
 - `curl`
-- `wireguard-tools` (`apt install wireguard-tools`)
-- `wgcf` (`curl -fsSL git.io/wgcf.sh | bash`)
+
+All other dependencies are installed by `warp.sh`.
+
+---
+
+## Troubleshooting
+
+**`warp-rotate.sh` says "wgcf: command not found"**
+→ Run `sudo bash warp.sh` first and choose option 2.
+
+**IP didn't change after rotation**
+→ Cloudflare may assign the same server. Try running `./warp-rotate.sh` again.
+
+**Lost SSH connection after rotation**
+→ This shouldn't happen (separate routing table). If it does, reboot the server — WARP doesn't auto-start.
+
+**Want to completely remove WARP**
+→ Run `sudo bash warp.sh` and choose option 8 (Uninstall).
 
 ---
 
