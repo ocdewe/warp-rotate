@@ -52,8 +52,8 @@ This will:
 
 Output:
 ```
-Normal IP:  43.156.138.31        ← Your real VPS IP (unchanged)
-WARP IP:    104.28.222.46        ← Cloudflare WARP IP
+Normal IP:  203.0.113.10         ← Your real VPS IP (unchanged)
+WARP IP:    104.28.xxx.xxx       ← Cloudflare WARP IP (different!)
 SOCKS5:     socks5://127.0.0.1:40000
 ```
 
