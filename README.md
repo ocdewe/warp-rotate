@@ -1,110 +1,128 @@
-# WARP Rotate — Cloudflare WARP IP Rotation Tool
+# WARP Rotate — Cloudflare WARP IP Rotation + SOCKS5 Proxy
 
-Rotate your public IP address using Cloudflare WARP for free. Useful for bypassing IP bans and rate limits.
+Rotate your public IP address using Cloudflare WARP for free. Works as a **SOCKS5 proxy** that can be used by [enowxai](https://enowxlabs.com) or any application that supports SOCKS5 proxy.
+
+**SSH, Tailscale, Nginx, and all other services are NOT affected** — WARP uses a separate routing table.
 
 ## What's Included
 
 | File | Description |
 |------|-------------|
-| `warp.sh` | **Step 1** — Cloudflare WARP installer (install WireGuard + wgcf) |
-| `warp-rotate.sh` | **Step 2** — IP rotation script (auto re-register for new IP) |
-
-> ⚠️ You **must** run `warp.sh` first to install the required tools before using `warp-rotate.sh`.
+| `warp-rotate.sh` | All-in-one: setup, rotate, SOCKS5 proxy, enowxai integration |
 
 ---
 
 ## Quick Start
 
-### Step 1: Download
+### Step 1: Install Dependencies
 
 ```bash
-git clone https://github.com/ocdewe/warp-rotate.git
-cd warp-rotate
-chmod +x warp.sh warp-rotate.sh
+# Install WireGuard tools
+apt install -y wireguard-tools
+
+# Install wgcf (Cloudflare WARP account manager)
+curl -fsSL git.io/wgcf.sh | bash
 ```
 
-Or download individual files:
+Verify:
+```bash
+wg --version     # wireguard-tools v1.x
+wgcf version     # wgcf v2.x
+```
+
+### Step 2: Download Script
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ocdewe/warp-rotate/main/warp.sh -o warp.sh
 curl -fsSL https://raw.githubusercontent.com/ocdewe/warp-rotate/main/warp-rotate.sh -o warp-rotate.sh
-chmod +x warp.sh warp-rotate.sh
+chmod +x warp-rotate.sh
 ```
 
-### Step 2: Install WARP (run `warp.sh` first!)
+### Step 3: Setup (First Time)
 
 ```bash
-sudo bash warp.sh
+sudo ./warp-rotate.sh setup
 ```
 
-This opens an interactive menu:
+This will:
+1. Register a free Cloudflare WARP account
+2. Generate WireGuard config (separate routing table 51888)
+3. Start WARP tunnel
+4. Install `microsocks` (lightweight SOCKS5 proxy, built from source)
+5. Start SOCKS5 proxy on `127.0.0.1:40000` → routed through WARP
 
+Output:
 ```
- ============================================
-  Cloudflare WARP Installer
- ============================================
-  1. Install WARP Client
-  2. Install WireGuard
-  3. WARP IPv4
-  4. WARP IPv6
-  5. WARP Dual Stack
-  6. WARP Proxy (SOCKS5)
-  7. Disconnect WARP
-  8. Uninstall
-  0. Exit
- ============================================
+Normal IP:  43.156.138.31        ← Your real VPS IP (unchanged)
+WARP IP:    104.28.222.46        ← Cloudflare WARP IP
+SOCKS5:     socks5://127.0.0.1:40000
 ```
 
-**Choose option `2` (Install WireGuard)** — this installs:
-- `wireguard-tools` (WireGuard tunnel manager)
-- `wgcf` (Cloudflare WARP account manager)
-
-Then choose option `3`, `4`, or `5` to connect WARP for the first time.
-
-**Verify installation:**
+### Step 4: Verify
 
 ```bash
-wg --version          # Should show wireguard-tools version
-wgcf --version        # Should show wgcf version
-```
+# Check normal IP (should be your VPS IP)
+curl https://ifconfig.me
 
-### Step 3: Rotate IP (run `warp-rotate.sh`)
-
-Now you can rotate your IP:
-
-```bash
-sudo ./warp-rotate.sh
+# Check WARP IP via SOCKS5 proxy (should be different)
+curl -x socks5://127.0.0.1:40000 https://ifconfig.me
 ```
 
 ---
 
-## How It Works
+## enowxai Integration
 
-```
-warp.sh (run once)          warp-rotate.sh (run anytime)
-─────────────────           ────────────────────────────
-Install WireGuard    →      1. Stop WARP tunnel
-Install wgcf         →      2. Delete old WARP account
-First WARP connect   →      3. Register NEW free account
-                             4. Generate new WireGuard config
-                             5. Pick random Cloudflare endpoint
-                             6. Start tunnel → NEW IP
+### Option A: Add WARP as Additional Proxy
+
+```bash
+sudo ./warp-rotate.sh --enowxai-add
 ```
 
-Uses a **separate routing table (51888)** so your main routing, SSH, Tailscale, and other services are **not affected**.
+This adds `socks5://127.0.0.1:40000` to your existing enowxai proxy list.
+
+### Option B: Replace All Proxies with WARP (Recommended)
+
+```bash
+sudo ./warp-rotate.sh --enowxai-clear
+```
+
+This will:
+1. **Backup** your current proxy list to `/root/.enowxai/proxies.json.bak.<timestamp>`
+2. **Clear** all existing proxies
+3. **Add** WARP SOCKS5 proxy as the only proxy
+4. **Test** the proxy
+
+After running, verify in the enowxai dashboard:
+```
+http://localhost:1431
+```
+Go to the **Proxy** section to confirm WARP proxy is listed and status is `ok`.
+
+### Rollback (Restore Old Proxies)
+
+```bash
+# Find your backup
+ls /root/.enowxai/proxies.json.bak.*
+
+# Restore
+cp /root/.enowxai/proxies.json.bak.<timestamp> /root/.enowxai/proxies.json
+enowxai restart
+```
 
 ---
 
 ## Usage
 
 ```bash
-# Rotate IP once
-sudo ./warp-rotate.sh
+# First-time setup (install + connect + proxy)
+sudo ./warp-rotate.sh setup
 
-# Check current public IP
+# Rotate IP (re-register WARP → new IP)
+sudo ./warp-rotate.sh rotate
+
+# Check IPs
 sudo ./warp-rotate.sh --check
 
-# Check WARP status (tunnel, IP, config)
+# Full status (tunnel, proxy, services)
 sudo ./warp-rotate.sh --status
 
 # Auto-rotate every 1 hour
@@ -113,24 +131,57 @@ sudo ./warp-rotate.sh --loop 3600
 # Auto-rotate every 30 minutes
 sudo ./warp-rotate.sh --loop 1800
 
-# Stop WARP tunnel
+# Stop everything (WARP + proxy)
 sudo ./warp-rotate.sh --down
 
-# Start WARP tunnel
+# Start everything (WARP + proxy)
 sudo ./warp-rotate.sh --up
+
+# Add WARP proxy to enowxai
+sudo ./warp-rotate.sh --enowxai-add
+
+# Replace enowxai proxies with WARP (backup + clear + add)
+sudo ./warp-rotate.sh --enowxai-clear
 ```
 
 ---
 
-## How IP Rotation Works
+## How It Works
 
-Each rotation:
-- Deletes the old WARP account (`wgcf-account.toml`)
-- Registers a **brand new** free Cloudflare WARP account
-- Picks a **random endpoint** from 5 Cloudflare servers
-- New account + different endpoint = **higher chance of getting a different IP**
+```
+┌─────────────────────────────────────────────────────┐
+│  Your VPS                                           │
+│                                                     │
+│  ┌──────────┐    ┌──────────┐    ┌───────────────┐  │
+│  │ enowxai  │───▶│microsocks│───▶│  WARP tunnel  │──┼──▶ Cloudflare ──▶ Internet
+│  │ :1430    │    │ :40000   │    │  (wgcf)       │  │    (new IP)
+│  └──────────┘    └──────────┘    └───────────────┘  │
+│                                                     │
+│  ┌──────────┐                                       │
+│  │ SSH      │────────────────────────────────────────┼──▶ Direct (original IP)
+│  │Tailscale │────────────────────────────────────────┼──▶ Direct (original IP)
+│  │ Nginx    │────────────────────────────────────────┼──▶ Direct (original IP)
+│  └──────────┘                                       │
+│                                                     │
+│  Routing table 51888 (WARP only)                    │
+│  Default route (SSH/Tailscale/Nginx untouched)      │
+└─────────────────────────────────────────────────────┘
+```
 
-> ⚠️ IP is assigned by Cloudflare. You may occasionally get the same IP. The script logs old vs new IP for verification.
+### IP Rotation Flow
+
+```
+rotate command
+  ├── Stop SOCKS5 proxy (microsocks)
+  ├── Stop WARP tunnel (wg-quick down)
+  ├── Delete old WARP account
+  ├── Register NEW free Cloudflare account
+  ├── Generate new WireGuard config
+  ├── Pick random Cloudflare endpoint
+  ├── Start WARP tunnel (wg-quick up)
+  ├── Restore DNS (so SSH/Tailscale work)
+  └── Start SOCKS5 proxy → NEW IP!
+```
 
 ---
 
@@ -138,12 +189,46 @@ Each rotation:
 
 | Aspect | Detail |
 |--------|--------|
-| Routing | Uses separate table `51888` — does NOT touch default route |
-| SSH | ✅ Not affected |
-| Tailscale | ✅ Not affected |
-| DNS | Changed to `8.8.8.8` for WARP interface only |
-| Reversible | `./warp-rotate.sh --down` removes everything |
-| Auto-start | No — does not persist after reboot |
+| **Routing** | Separate table `51888` — default route NOT touched |
+| **SSH** | ✅ Not affected (uses original IP) |
+| **Tailscale** | ✅ Not affected (uses own interface) |
+| **Nginx** | ✅ Not affected (listens on original IP) |
+| **DNS** | Restored after WARP start (no DNS leak) |
+| **Reversible** | `./warp-rotate.sh --down` stops everything cleanly |
+| **Auto-start** | No — does NOT persist after reboot |
+| **enowxai backup** | `--enowxai-clear` always backs up before clearing |
+
+---
+
+## Step-by-Step: Full Setup for enowxai
+
+Complete walkthrough from zero to WARP proxy on enowxai:
+
+```bash
+# 1. Install dependencies
+apt install -y wireguard-tools
+curl -fsSL git.io/wgcf.sh | bash
+
+# 2. Download script
+curl -fsSL https://raw.githubusercontent.com/ocdewe/warp-rotate/main/warp-rotate.sh -o warp-rotate.sh
+chmod +x warp-rotate.sh
+
+# 3. Setup WARP + SOCKS5 proxy
+sudo ./warp-rotate.sh setup
+
+# 4. Verify WARP is working
+curl -x socks5://127.0.0.1:40000 https://ifconfig.me
+
+# 5. Replace enowxai proxies with WARP
+sudo ./warp-rotate.sh --enowxai-clear
+
+# 6. Check enowxai dashboard
+#    Open http://localhost:1431 → Proxy section
+#    Should show: socks5://127.0.0.1:40000 → status: ok
+
+# 7. (Optional) Auto-rotate every hour
+sudo ./warp-rotate.sh --loop 3600
+```
 
 ---
 
@@ -151,32 +236,44 @@ Each rotation:
 
 - Linux (Debian/Ubuntu/CentOS/Fedora/Arch)
 - Root access
-- `curl`
-
-All other dependencies are installed by `warp.sh`.
+- `curl`, `git`, `make`, `gcc` (for building microsocks)
 
 ---
 
 ## Troubleshooting
 
-**`warp-rotate.sh` says "wgcf: command not found"**
-→ Run `sudo bash warp.sh` first and choose option 2.
+**"wgcf: command not found"**
+→ Run `curl -fsSL git.io/wgcf.sh | bash`
+
+**"wireguard-tools not found"**
+→ Run `apt install -y wireguard-tools`
 
 **IP didn't change after rotation**
-→ Cloudflare may assign the same server. Try running `./warp-rotate.sh` again.
+→ Cloudflare may assign the same server. Run `./warp-rotate.sh rotate` again.
 
-**Lost SSH connection after rotation**
-→ This shouldn't happen (separate routing table). If it does, reboot the server — WARP doesn't auto-start.
+**SOCKS5 proxy not responding**
+→ Check if WARP tunnel is up: `./warp-rotate.sh --status`
+→ Restart: `./warp-rotate.sh --down && ./warp-rotate.sh --up`
+
+**Lost SSH connection**
+→ This shouldn't happen (separate routing table). Reboot the server — WARP doesn't auto-start.
+
+**Want to restore old enowxai proxies**
+→ `ls /root/.enowxai/proxies.json.bak.*` → `cp <backup> /root/.enowxai/proxies.json && enowxai restart`
 
 **Want to completely remove WARP**
-→ Run `sudo bash warp.sh` and choose option 8 (Uninstall).
+```bash
+./warp-rotate.sh --down
+rm -f /etc/wireguard/wgcf.conf
+rm -rf /etc/warp
+```
 
 ---
 
 ## Credits
 
-- **warp.sh** — [P3TERX/warp.sh](https://github.com/P3TERX/warp.sh) (MIT License)
 - **wgcf** — [ViRb3/wgcf](https://github.com/ViRb3/wgcf)
+- **microsocks** — [rofl0r/microsocks](https://github.com/rofl0r/microsocks)
 - **Cloudflare WARP** — [cloudflare.com/products/warp](https://www.cloudflare.com/products/warp/)
 
 ## License
