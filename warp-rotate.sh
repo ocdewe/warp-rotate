@@ -135,8 +135,11 @@ register_new_account() {
     log "Deleting old WARP account..."
     rm -f "$WGCF_ACCOUNT" "$WGCF_PROFILE"
 
-    mkdir -p "$WGCF_DIR"
-    cd "$WGCF_DIR"
+    mkdir -p "$WGCF_DIR" 2>/dev/null || true
+    cd "$WGCF_DIR" 2>/dev/null || cd /tmp
+
+    # Also clean current directory in case wgcf writes here
+    rm -f ./wgcf-account.toml ./wgcf-profile.conf 2>/dev/null
 
     log "Registering new WARP account..."
     local retries=3
@@ -145,12 +148,20 @@ register_new_account() {
             || echo 'y' | wgcf register 2>/dev/null \
             || yes | wgcf register 2>/dev/null
 
+        # wgcf may write to WGCF_DIR or current directory
         if [[ -f "$WGCF_ACCOUNT" ]]; then
+            log "✅ Account registered"
+            break
+        elif [[ -f ./wgcf-account.toml ]]; then
+            # File created in current dir, move to WGCF_DIR
+            mkdir -p "$WGCF_DIR" 2>/dev/null || true
+            cp ./wgcf-account.toml "$WGCF_ACCOUNT" 2>/dev/null || WGCF_ACCOUNT="./wgcf-account.toml"
             log "✅ Account registered"
             break
         fi
         if [[ $i -eq $retries ]]; then
             log "ERROR: Failed to register after $retries attempts"
+            log "TIP: Check if wgcf-account.toml was created in $(pwd)"
             exit 1
         fi
         log "Retry $i/$retries..."
@@ -159,6 +170,11 @@ register_new_account() {
 
     log "Generating WireGuard profile..."
     wgcf generate 2>/dev/null
+
+    # Check both locations
+    if [[ ! -f "$WGCF_PROFILE" && -f ./wgcf-profile.conf ]]; then
+        cp ./wgcf-profile.conf "$WGCF_PROFILE" 2>/dev/null || WGCF_PROFILE="./wgcf-profile.conf"
+    fi
 
     if [[ ! -f "$WGCF_PROFILE" ]]; then
         log "ERROR: Profile generation failed"
