@@ -143,55 +143,54 @@ curl -x socks5://127.0.0.1:40000 https://ifconfig.me
 
 Works on both Linux and Windows.
 
-### Option A: Add WARP as Additional Proxy
+### 🐧 Linux
 
+**Option A: Add WARP as additional proxy**
 ```bash
-# Linux
 sudo ./warp-rotate.sh --enowxai-add
+```
 
-# Windows (PowerShell as Admin)
+**Option B: Replace all proxies with WARP**
+```bash
+sudo ./warp-rotate.sh --enowxai-clear
+```
+
+**Rollback (restore old proxies):**
+```bash
+ls /root/.enowxai/proxies.json.bak.*
+cp /root/.enowxai/proxies.json.bak.<timestamp> /root/.enowxai/proxies.json
+enowxai restart
+```
+
+### 🪟 Windows (PowerShell as Admin)
+
+**Option A: Add WARP as additional proxy**
+```powershell
 .\warp-rotate.ps1 -EnowxaiAdd
 ```
 
-This adds `socks5://127.0.0.1:40000` to your existing enowxai proxy list.
-
-### Option B: Replace All Proxies with WARP
-
-```bash
-# Linux
-sudo ./warp-rotate.sh --enowxai-clear
-
-# Windows (PowerShell as Admin)
+**Option B: Replace all proxies with WARP**
+```powershell
 .\warp-rotate.ps1 -EnowxaiClear
 ```
 
-This will:
-1. **Backup** your current proxy list (timestamped file)
-2. **Clear** all existing proxies
-3. **Add** WARP SOCKS5 proxy as the only proxy
-4. **Test** the proxy
+**Rollback (restore old proxies):**
+```powershell
+dir $env:USERPROFILE\.enowxai\proxies.json.bak.*
+Copy-Item "$env:USERPROFILE\.enowxai\proxies.json.bak.<timestamp>" "$env:USERPROFILE\.enowxai\proxies.json"
+enowxai restart
+```
+
+### What it does
+
+- **Option A** — adds `socks5://127.0.0.1:40000` to your existing proxy list
+- **Option B** — backs up current proxies, clears all, adds WARP as the only proxy
 
 After running, verify in the enowxai dashboard:
 ```
 http://localhost:1431/proxy
 ```
 Confirm WARP proxy is listed and status is `ok`.
-
-### Rollback (Restore Old Proxies)
-
-```bash
-# Linux
-ls /root/.enowxai/proxies.json.bak.*
-cp /root/.enowxai/proxies.json.bak.<timestamp> /root/.enowxai/proxies.json
-enowxai restart
-```
-
-```powershell
-# Windows
-dir $env:USERPROFILE\.enowxai\proxies.json.bak.*
-Copy-Item "$env:USERPROFILE\.enowxai\proxies.json.bak.<timestamp>" "$env:USERPROFILE\.enowxai\proxies.json"
-enowxai restart
-```
 
 ---
 
