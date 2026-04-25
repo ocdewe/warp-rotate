@@ -206,9 +206,9 @@ Confirm WARP proxy is listed and status is `ok`.
 │  └──────────┘    └──────────┘    └───────────────┘  │
 │                                                     │
 │  ┌──────────┐                                       │
-│  │ SSH      │────────────────────────────────────────┼──▶ Direct (original IP)
-│  │Tailscale │────────────────────────────────────────┼──▶ Direct (original IP)
-│  │ Nginx    │────────────────────────────────────────┼──▶ Direct (original IP)
+│  │ SSH      │───────────────────────────────────────┼──▶ Direct (original IP)
+│  │Tailscale │───────────────────────────────────────┼──▶ Direct (original IP)
+│  │ Nginx    │───────────────────────────────────────┼──▶ Direct (original IP)
 │  └──────────┘                                       │
 │                                                     │
 │  WARP traffic only goes through tunnel              │
