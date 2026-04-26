@@ -421,7 +421,7 @@ function Invoke-Help {
 warp-rotate-windows.ps1 -- Cloudflare WARP IP Rotation + SOCKS5 Proxy (Windows)
 
 Usage:
-  .\warp-rotate-windows.ps1 <command>
+  .\warp-rotate.ps1 <command>
 
 Commands:
   -Setup              First-time setup (install WARP + connect + proxy)
@@ -440,15 +440,15 @@ Config:
   Mode:               Proxy (SOCKS5)
 
 Examples:
-  .\warp-rotate-windows.ps1 -Setup
-  .\warp-rotate-windows.ps1 -Rotate
-  .\warp-rotate-windows.ps1 -Check
-  .\warp-rotate-windows.ps1 -EnowxaiAdd
+  .\warp-rotate.ps1 -Setup
+  .\warp-rotate.ps1 -Rotate
+  .\warp-rotate.ps1 -Check
+  .\warp-rotate.ps1 -EnowxaiAdd
   curl -x socks5://127.0.0.1:40000 https://ifconfig.me
 
 Note:
   Run as Administrator. If blocked by Execution Policy:
-  powershell -ExecutionPolicy Bypass -File .\warp-rotate-windows.ps1 -Setup
+  powershell -ExecutionPolicy Bypass -File .\warp-rotate.ps1 -Setup
 
 Requirements:
   - Cloudflare WARP for Windows (auto-installed on -Setup)
