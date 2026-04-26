@@ -3,12 +3,12 @@
 .SYNOPSIS
     WARP IP Rotation + SOCKS5 Proxy for Windows
 .EXAMPLE
-    .\warp-rotate-windows.ps1 -Setup
-    .\warp-rotate-windows.ps1 -Rotate
-    .\warp-rotate-windows.ps1 -Check
-    .\warp-rotate-windows.ps1 -Status
-    .\warp-rotate-windows.ps1 -Up
-    .\warp-rotate-windows.ps1 -Down
+    .\warp-rotate.ps1 -Setup
+    .\warp-rotate.ps1 -Rotate
+    .\warp-rotate.ps1 -Check
+    .\warp-rotate.ps1 -Status
+    .\warp-rotate.ps1 -Up
+    .\warp-rotate.ps1 -Down
 #>
 
 param(
@@ -250,7 +250,7 @@ function Invoke-Setup {
         Write-Log "2. Klik Settings > Advanced > Configure Proxy"
         Write-Log "3. Enable proxy, set port 40000"
         Write-Log "4. Connect WARP dari GUI"
-        Write-Log ("5. Lalu jalankan: .\warp-rotate-windows.ps1 -Check")
+        Write-Log ("5. Lalu jalankan: .\warp-rotate.ps1 -Check")
     }
     Write-Host ""
 }
@@ -418,7 +418,7 @@ function Invoke-EnowxaiClear {
 
 function Invoke-Help {
     Write-Host @"
-warp-rotate-windows.ps1 -- Cloudflare WARP IP Rotation + SOCKS5 Proxy (Windows)
+warp-rotate.ps1 -- Cloudflare WARP IP Rotation + SOCKS5 Proxy (Windows)
 
 Usage:
   .\warp-rotate.ps1 <command>
