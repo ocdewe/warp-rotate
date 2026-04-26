@@ -80,6 +80,7 @@ sudo ./warp-rotate.sh --down          # Stop WARP + proxy
 sudo ./warp-rotate.sh --up            # Start WARP + proxy
 sudo ./warp-rotate.sh --enowxai-add   # Add WARP proxy to enowxai
 sudo ./warp-rotate.sh --enowxai-clear # Backup + clear + add WARP to enowxai
+sudo ./warp-rotate.sh --help            # Show help
 ```
 
 ---
@@ -115,11 +116,13 @@ This will:
 
 ```powershell
 # Normal IP (your real IP)
-curl https://ifconfig.me
+curl.exe https://ifconfig.me
 
 # WARP IP via SOCKS5 proxy (should be different!)
-curl -x socks5://127.0.0.1:40000 https://ifconfig.me
+curl.exe -x socks5://127.0.0.1:40000 https://ifconfig.me
 ```
+
+> **Note:** In PowerShell, always use `curl.exe` (not `curl`). PowerShell aliases `curl` to `Invoke-WebRequest` which does not support `-x` proxy flag.
 
 ### Windows Commands
 
@@ -153,6 +156,7 @@ sudo ./warp-rotate.sh --enowxai-add
 **Option B: Replace all proxies with WARP**
 ```bash
 sudo ./warp-rotate.sh --enowxai-clear
+sudo ./warp-rotate.sh --help            # Show help
 ```
 
 **Rollback (restore old proxies):**
@@ -269,6 +273,7 @@ curl -x socks5://127.0.0.1:40000 https://ifconfig.me
 
 # 5. Replace enowxai proxies with WARP
 sudo ./warp-rotate.sh --enowxai-clear
+sudo ./warp-rotate.sh --help            # Show help
 
 # 6. Check enowxai dashboard
 #    Open http://localhost:1431/proxy
@@ -290,7 +295,7 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ocdewe/warp-rotate/mai
 .\warp-rotate.ps1 -Setup
 
 # 4. Verify WARP is working
-curl -x socks5://127.0.0.1:40000 https://ifconfig.me
+curl.exe -x socks5://127.0.0.1:40000 https://ifconfig.me
 
 # 5. Replace enowxai proxies with WARP
 .\warp-rotate.ps1 -EnowxaiClear
@@ -302,6 +307,8 @@ curl -x socks5://127.0.0.1:40000 https://ifconfig.me
 # 7. (Optional) Auto-rotate every hour
 .\warp-rotate.ps1 -Loop 3600
 ```
+
+> **Note:** In PowerShell, always use `curl.exe` (not `curl`). PowerShell aliases `curl` to `Invoke-WebRequest` which does not support `-x` proxy flag.
 
 ---
 
