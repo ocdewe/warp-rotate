@@ -483,6 +483,49 @@ do_up() {
 # === Main ===
 check_root
 
+do_help() {
+    cat << 'HELP'
+warp-rotate.sh — Cloudflare WARP IP Rotation + SOCKS5 Proxy (Linux)
+
+Usage:
+  ./warp-rotate.sh <command> [options]
+
+Commands:
+  setup              First-time setup (install WARP + connect + proxy)
+  rotate             Rotate IP (re-register WARP, new IP)
+  --check            Check current IPs (normal + WARP)
+  --status           Full status (tunnel, proxy, IPs, services)
+  --up               Start WARP tunnel + SOCKS5 proxy
+  --down             Stop WARP tunnel + SOCKS5 proxy
+  --loop [seconds]   Auto-rotate every N seconds (default: 7200, min: 7200)
+  --enowxai-add      Add WARP proxy to enowxai
+  --enowxai-clear    Backup + clear all enowxai proxies, add WARP only
+  --help             Show this help message
+
+Config:
+  SOCKS5 Proxy:      127.0.0.1:40000
+  WireGuard Iface:   wgcf
+  WARP IP:           172.16.0.2
+  Min rotate:        2 hours (to avoid Cloudflare throttle)
+
+Examples:
+  ./warp-rotate.sh setup                  # Install & setup everything
+  ./warp-rotate.sh rotate                 # Get a new IP
+  ./warp-rotate.sh --check                # Show normal + WARP IP
+  ./warp-rotate.sh --loop 7200            # Auto-rotate every 2 hours
+  curl -x socks5://127.0.0.1:40000 https://ifconfig.me   # Test proxy
+
+Requirements:
+  - Root access
+  - wgcf (auto-installed via git.io/wgcf.sh)
+  - wireguard-tools (apt install wireguard-tools)
+  - microsocks (auto-compiled from source)
+  - curl
+
+Repo: https://github.com/ocdewe/warp-rotate
+HELP
+}
+
 case "${1:-}" in
     setup)
         check_deps
@@ -514,6 +557,9 @@ case "${1:-}" in
         ;;
     --enowxai-clear)
         enowxai_clear_and_add
+        ;;
+    --help|-h|help)
+        do_help
         ;;
     *)
         # Default: rotate

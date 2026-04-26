@@ -1,23 +1,14 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    WARP Rotate for Windows — Cloudflare WARP IP Rotation + SOCKS5 Proxy
-
-.DESCRIPTION
-    Rotate your public IP using Cloudflare WARP for free.
-    Creates a WireGuard tunnel + local SOCKS5 proxy.
-    Works with enowxai or any app that supports SOCKS5.
-
+    WARP IP Rotation + SOCKS5 Proxy for Windows
 .EXAMPLE
-    .\warp-rotate.ps1 -Setup          # First-time setup
-    .\warp-rotate.ps1 -Rotate         # Rotate IP
-    .\warp-rotate.ps1 -Check          # Check IPs
-    .\warp-rotate.ps1 -Status         # Full status
-    .\warp-rotate.ps1 -Up             # Start WARP + proxy
-    .\warp-rotate.ps1 -Down           # Stop WARP + proxy
-    .\warp-rotate.ps1 -Loop 3600      # Auto-rotate every hour
-    .\warp-rotate.ps1 -EnowxaiAdd     # Add WARP proxy to enowxai
-    .\warp-rotate.ps1 -EnowxaiClear   # Backup + clear + add WARP to enowxai
+    .\warp-rotate-windows.ps1 -Setup
+    .\warp-rotate-windows.ps1 -Rotate
+    .\warp-rotate-windows.ps1 -Check
+    .\warp-rotate-windows.ps1 -Status
+    .\warp-rotate-windows.ps1 -Up
+    .\warp-rotate-windows.ps1 -Down
 #>
 
 param(
@@ -25,289 +16,340 @@ param(
     [switch]$Rotate,
     [switch]$Check,
     [switch]$Status,
-    [switch]$Up,
     [switch]$Down,
+    [switch]$Up,
     [switch]$EnowxaiAdd,
     [switch]$EnowxaiClear,
-    [int]$Loop = 0
+    [switch]$Help
 )
 
-# === Config ===
-$WARP_DIR = "$env:USERPROFILE\.warp-rotate"
-$WGCF_EXE = "$WARP_DIR\wgcf.exe"
-$WGCF_ACCOUNT = "$WARP_DIR\wgcf-account.toml"
-$WGCF_PROFILE = "$WARP_DIR\wgcf-profile.conf"
-$WG_CONF = "$WARP_DIR\wgcf-tunnel.conf"
-$MICROSOCKS_EXE = "$WARP_DIR\microsocks.exe"
-$TUNNEL_NAME = "wgcf"
+$ErrorActionPreference = "Stop"
+$WARP_CLI = "C:\Program Files\Cloudflare\Cloudflare WARP\warp-cli.exe"
 $SOCKS_PORT = 40000
 $SOCKS_BIND = "127.0.0.1"
-$WARP_IP = "172.16.0.2"
+$LOG_PREFIX = "[warp-rotate]"
 
-$ENDPOINTS = @(
-    "162.159.192.1:2408"
-    "162.159.193.1:2408"
-    "162.159.195.1:2408"
-    "162.159.192.7:2408"
-    "162.159.193.7:2408"
-)
-
-$WGCF_VERSION = "2.2.30"
-$WGCF_URL = "https://github.com/ViRb3/wgcf/releases/download/v$WGCF_VERSION/wgcf_${WGCF_VERSION}_windows_amd64.exe"
-$MICROSOCKS_URL = "https://github.com/nicjansma/microsocks-windows/releases/latest/download/microsocks-x64.exe"
-
-# === Helpers ===
-
-function Log($msg) {
-    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "$ts [warp-rotate] $msg"
+function Write-Log {
+    param([string]$Message)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "$timestamp $LOG_PREFIX $Message"
 }
 
 function Get-CurrentIP {
     try {
-        $ip = (Invoke-WebRequest -Uri "https://ifconfig.me" -UseBasicParsing -TimeoutSec 10).Content.Trim()
-        return $ip
-    } catch {
+        # Pakai curl.exe supaya dapat plain text, bukan HTML
+        $ip = (curl.exe -s --max-time 10 -H "Accept: text/plain" https://ifconfig.me 2>$null)
+        if ($ip -and $ip -notmatch "<html") {
+            return $ip.Trim()
+        }
+        # Fallback ke api.ipify.org
+        $ip = (curl.exe -s --max-time 10 https://api.ipify.org 2>$null)
+        if ($ip) { return $ip.Trim() }
+        return "unknown"
+    }
+    catch {
         return "unknown"
     }
 }
 
 function Get-WarpIP {
     try {
-        $ip = (Invoke-WebRequest -Uri "https://ifconfig.me" -UseBasicParsing -TimeoutSec 10 -Proxy "socks5://${SOCKS_BIND}:${SOCKS_PORT}").Content.Trim()
-        return $ip
-    } catch {
-        # Fallback: try via interface
-        try {
-            $ip = (Invoke-WebRequest -Uri "https://ifconfig.me" -UseBasicParsing -TimeoutSec 10).Content.Trim()
-            return $ip
-        } catch {
-            return "not active"
+        $proxyAddr = "socks5://127.0.0.1:" + $SOCKS_PORT
+        $ip = (curl.exe -s --max-time 10 -x $proxyAddr -H "Accept: text/plain" https://ifconfig.me 2>$null)
+        if ($ip -and $ip -notmatch "<html") {
+            return $ip.Trim()
         }
+        $ip = (curl.exe -s --max-time 10 -x $proxyAddr https://api.ipify.org 2>$null)
+        if ($ip) { return $ip.Trim() }
+        return "not active"
+    }
+    catch {
+        return "not active"
     }
 }
 
-function Get-RandomEndpoint {
-    return $ENDPOINTS | Get-Random
+function Test-WarpInstalled {
+    return (Test-Path $WARP_CLI)
 }
 
-function Test-WireGuardInstalled {
-    $wgPath = Get-Command "wireguard" -ErrorAction SilentlyContinue
-    if (-not $wgPath) {
-        $wgPath = Get-Command "C:\Program Files\WireGuard\wireguard.exe" -ErrorAction SilentlyContinue
+function Get-WarpStatus {
+    if (-not (Test-WarpInstalled)) { return "NOT INSTALLED" }
+    try {
+        $result = & $WARP_CLI status 2>&1 | Out-String
+        return $result.Trim()
     }
-    return $null -ne $wgPath
-}
-
-function Get-WireGuardExe {
-    $wg = Get-Command "wireguard" -ErrorAction SilentlyContinue
-    if ($wg) { return $wg.Source }
-    $default = "C:\Program Files\WireGuard\wireguard.exe"
-    if (Test-Path $default) { return $default }
-    return $null
-}
-
-function Get-WgExe {
-    $wg = Get-Command "wg" -ErrorAction SilentlyContinue
-    if ($wg) { return $wg.Source }
-    $default = "C:\Program Files\WireGuard\wg.exe"
-    if (Test-Path $default) { return $default }
-    return $null
-}
-
-# === Install Dependencies ===
-
-function Install-Dependencies {
-    # Create working directory
-    if (-not (Test-Path $WARP_DIR)) {
-        New-Item -ItemType Directory -Path $WARP_DIR -Force | Out-Null
-        Log "Created directory: $WARP_DIR"
+    catch {
+        return "ERROR"
     }
+}
 
-    # Check WireGuard
-    if (-not (Test-WireGuardInstalled)) {
-        Log "WireGuard not found. Please install from: https://www.wireguard.com/install/"
-        Log "Download: https://download.wireguard.com/windows-client/wireguard-installer.exe"
-        Write-Host ""
-        $install = Read-Host "Open download page? (y/n)"
-        if ($install -eq 'y') {
-            Start-Process "https://download.wireguard.com/windows-client/wireguard-installer.exe"
-            Log "Install WireGuard, then run this script again."
-        }
+function Install-Warp {
+    Write-Log "Downloading Cloudflare WARP installer..."
+    $installerUrl = "https://1111-releases.cloudflareclient.com/windows/Cloudflare_WARP_Release-x64.msi"
+    $installerPath = "$env:TEMP\Cloudflare_WARP.msi"
+
+    try {
+        Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing
+        Write-Log "Installing Cloudflare WARP..."
+        Start-Process msiexec.exe -ArgumentList "/i `"$installerPath`" /quiet /norestart" -Wait
+        Remove-Item $installerPath -Force
+        Write-Log "[OK] WARP installed"
+        Start-Sleep -Seconds 5
+    }
+    catch {
+        Write-Log ("ERROR: Failed to install WARP - " + $_.Exception.Message)
         exit 1
     }
-    Log "WireGuard: OK"
-
-    # Download wgcf
-    if (-not (Test-Path $WGCF_EXE)) {
-        Log "Downloading wgcf v$WGCF_VERSION..."
-        Invoke-WebRequest -Uri $WGCF_URL -OutFile $WGCF_EXE -UseBasicParsing
-        Log "wgcf downloaded"
-    }
-    Log "wgcf: OK"
-
-    # Download microsocks
-    if (-not (Test-Path $MICROSOCKS_EXE)) {
-        Log "Downloading microsocks..."
-        try {
-            Invoke-WebRequest -Uri $MICROSOCKS_URL -OutFile $MICROSOCKS_EXE -UseBasicParsing
-            Log "microsocks downloaded"
-        } catch {
-            Log "WARN: Could not download microsocks. SOCKS5 proxy will not be available."
-            Log "You can manually download from: https://github.com/nicjansma/microsocks-windows/releases"
-        }
-    }
-    if (Test-Path $MICROSOCKS_EXE) { Log "microsocks: OK" }
 }
 
-# === WARP Tunnel ===
+function Start-WarpService {
+    $service = Get-Service -Name "CloudflareWARP" -ErrorAction SilentlyContinue
+    if (-not $service) {
+        $service = Get-Service -Name "Cloudflare WARP" -ErrorAction SilentlyContinue
+    }
+    if ($service) {
+        if ($service.Status -ne "Running") {
+            Write-Log "Starting WARP service..."
+            Start-Service $service.Name
+            Start-Sleep -Seconds 3
+        }
+        Write-Log ("[OK] WARP service: " + $service.Status)
+    }
+    else {
+        Write-Log "ERROR: WARP service not found. Install WARP first with -Setup"
+        exit 1
+    }
+}
 
-function Stop-WarpTunnel {
-    $wgExe = Get-WireGuardExe
-    if (-not $wgExe) { return }
-
-    # Check if tunnel exists
-    $tunnels = & "$wgExe" /listtunnels 2>$null
-    if ($tunnels -match $TUNNEL_NAME) {
-        Log "Stopping WARP tunnel..."
-        & "$wgExe" /uninstalltunnelservice $TUNNEL_NAME 2>$null
+function Register-Warp {
+    Write-Log "Checking WARP registration..."
+    $warpStatus = Get-WarpStatus
+    if ($warpStatus -match "Registration Missing") {
+        Write-Log "Registering WARP..."
+        & $WARP_CLI registration new 2>&1 | Out-Null
         Start-Sleep -Seconds 2
-        Log "Tunnel stopped"
+        Write-Log "[OK] WARP registered"
+    }
+    else {
+        Write-Log "WARP already registered"
     }
 }
 
-function Start-WarpTunnel {
-    $wgExe = Get-WireGuardExe
-    if (-not $wgExe) {
-        Log "ERROR: WireGuard not found"
-        exit 1
+function Set-WarpMode {
+    Write-Log "Setting WARP mode to proxy..."
+    try {
+        & $WARP_CLI mode proxy 2>&1 | Out-Null
+        Start-Sleep -Seconds 1
+        Write-Log "[OK] WARP mode set to proxy"
+    }
+    catch {
+        Write-Log "[WARN] Could not set proxy mode. Trying warp mode..."
+        & $WARP_CLI mode warp 2>&1 | Out-Null
+    }
+}
+
+function Set-ProxyPort {
+    Write-Log ("Setting WARP proxy port to " + $SOCKS_PORT + "...")
+    try {
+        & $WARP_CLI proxy port $SOCKS_PORT 2>&1 | Out-Null
+        Start-Sleep -Seconds 1
+        Write-Log ("[OK] Proxy port set to " + $SOCKS_PORT)
+    }
+    catch {
+        Write-Log ("[WARN] Could not set proxy port: " + $_.Exception.Message)
+    }
+}
+
+function Connect-Warp {
+    Write-Log "Connecting to WARP..."
+    & $WARP_CLI connect 2>&1 | Out-Null
+    Start-Sleep -Seconds 5
+
+    $warpStatus = Get-WarpStatus
+    Write-Log ("WARP status: " + $warpStatus)
+
+    if ($warpStatus -match "Connected") {
+        Write-Log "[OK] WARP connected"
+        return $true
+    }
+    else {
+        Write-Log "[WARN] WARP may not be connected"
+        Write-Log "Try: Open Cloudflare WARP GUI and connect manually"
+        return $false
+    }
+}
+
+function Disconnect-Warp {
+    Write-Log "Disconnecting WARP..."
+    & $WARP_CLI disconnect 2>&1 | Out-Null
+    Start-Sleep -Seconds 2
+    Write-Log "[OK] WARP disconnected"
+}
+
+function Test-Proxy {
+    Write-Log "Testing SOCKS5 proxy..."
+    try {
+        $tcpTest = New-Object System.Net.Sockets.TcpClient
+        $tcpTest.Connect("127.0.0.1", $SOCKS_PORT)
+        $tcpTest.Close()
+        Write-Log ("[OK] SOCKS5 proxy active on 127.0.0.1:" + $SOCKS_PORT)
+        return $true
+    }
+    catch {
+        Write-Log ("[WARN] SOCKS5 proxy not responding on port " + $SOCKS_PORT)
+        return $false
+    }
+}
+
+# === Commands ===
+
+function Invoke-Setup {
+    Write-Log "=== WARP + SOCKS5 Proxy Setup ==="
+
+    if (-not (Test-WarpInstalled)) {
+        Install-Warp
+    }
+    else {
+        Write-Log "WARP already installed"
     }
 
-    if (-not (Test-Path $WG_CONF)) {
-        Log "ERROR: WireGuard config not found: $WG_CONF"
-        exit 1
-    }
+    # Start service
+    Start-WarpService
 
-    # Copy config to WireGuard directory
-    $wgConfDir = "C:\Program Files\WireGuard\Data\Configurations"
-    if (-not (Test-Path $wgConfDir)) {
-        New-Item -ItemType Directory -Path $wgConfDir -Force | Out-Null
-    }
-    Copy-Item $WG_CONF "$wgConfDir\$TUNNEL_NAME.conf.dpapi" -Force 2>$null
+    # Register
+    Register-Warp
 
-    Log "Starting WARP tunnel..."
-    & "$wgExe" /installtunnelservice $WG_CONF 2>$null
+    # Set mode to proxy (SOCKS5)
+    Set-WarpMode
+
+    # Set proxy port
+    Set-ProxyPort
+
+    # Connect
+    Connect-Warp
+
+    # Wait and test
+    Start-Sleep -Seconds 3
+    $proxyOk = Test-Proxy
+
+    $normalIP = Get-CurrentIP
+    Write-Host ""
+    Write-Log "=== Setup Complete ==="
+    Write-Log ("Normal IP:  " + $normalIP)
+
+    if ($proxyOk) {
+        $warpIP = Get-WarpIP
+        Write-Log ("WARP IP:    " + $warpIP)
+        Write-Log ("SOCKS5:     socks5://127.0.0.1:" + $SOCKS_PORT)
+    }
+    else {
+        Write-Log "WARP IP:    proxy not active"
+        Write-Log ""
+        Write-Log "=== TROUBLESHOOT ==="
+        Write-Log "1. Buka Cloudflare WARP GUI"
+        Write-Log "2. Klik Settings > Advanced > Configure Proxy"
+        Write-Log "3. Enable proxy, set port 40000"
+        Write-Log "4. Connect WARP dari GUI"
+        Write-Log ("5. Lalu jalankan: .\warp-rotate-windows.ps1 -Check")
+    }
+    Write-Host ""
+}
+
+function Invoke-Rotate {
+    $oldWarpIP = Get-WarpIP
+    Write-Log ("Current WARP IP: " + $oldWarpIP)
+
+    Disconnect-Warp
+
+    Write-Log "Waiting 3 seconds before reconnect..."
     Start-Sleep -Seconds 3
 
-    # Verify
-    $wg = Get-WgExe
-    if ($wg) {
-        $show = & "$wg" show $TUNNEL_NAME 2>$null
-        if ($show) {
-            Log "WARP tunnel active"
-        } else {
-            Log "WARN: Tunnel may not be active. Check WireGuard GUI."
-        }
+    Connect-Warp
+
+    Start-Sleep -Seconds 3
+    $newWarpIP = Get-WarpIP
+    Write-Log ("New WARP IP: " + $newWarpIP)
+
+    if ($oldWarpIP -ne "not active" -and $newWarpIP -ne "not active" -and $oldWarpIP -ne $newWarpIP) {
+        Write-Log ("[OK] IP rotated: " + $oldWarpIP + " -> " + $newWarpIP)
+    }
+    elseif ($newWarpIP -ne "not active") {
+        Write-Log ("[OK] WARP active - IP: " + $newWarpIP)
+    }
+    else {
+        Write-Log "[FAIL] Failed to get new IP"
     }
 }
 
-function Register-NewAccount {
-    Log "Deleting old WARP account..."
-    Remove-Item $WGCF_ACCOUNT -Force -ErrorAction SilentlyContinue
-    Remove-Item $WGCF_PROFILE -Force -ErrorAction SilentlyContinue
+function Invoke-Check {
+    $normalIP = Get-CurrentIP
+    $warpIP = Get-WarpIP
 
-    Set-Location $WARP_DIR
+    Write-Host ("Normal IP: " + $normalIP)
+    Write-Host ("WARP IP:   " + $warpIP)
+}
 
-    Log "Registering new WARP account..."
-    $retries = 3
-    for ($i = 1; $i -le $retries; $i++) {
-        # Auto-accept ToS
-        "y" | & $WGCF_EXE register 2>$null
+function Invoke-Status {
+    Write-Host "=== WARP Status ==="
 
-        if (Test-Path $WGCF_ACCOUNT) {
-            Log "Account registered"
-            break
-        }
-        if ($i -eq $retries) {
-            Log "ERROR: Failed to register after $retries attempts"
-            exit 1
-        }
-        Log "Retry $i/$retries..."
-        Start-Sleep -Seconds 2
+    # Service
+    $service = Get-Service -Name "CloudflareWARP" -ErrorAction SilentlyContinue
+    if (-not $service) {
+        $service = Get-Service -Name "Cloudflare WARP" -ErrorAction SilentlyContinue
+    }
+    if ($service) {
+        Write-Host ("Service:   " + $service.Status)
+    }
+    else {
+        Write-Host "Service:   NOT INSTALLED"
     }
 
-    Log "Generating WireGuard profile..."
-    & $WGCF_EXE generate 2>$null
+    # WARP status
+    $warpStatus = Get-WarpStatus
+    Write-Host ("WARP:      " + $warpStatus)
 
-    if (-not (Test-Path $WGCF_PROFILE)) {
-        Log "ERROR: Profile generation failed"
-        exit 1
+    # Proxy
+    $proxyOk = $false
+    try {
+        $tcpTest = New-Object System.Net.Sockets.TcpClient
+        $tcpTest.Connect("127.0.0.1", $SOCKS_PORT)
+        $tcpTest.Close()
+        $proxyOk = $true
+    }
+    catch { }
+
+    if ($proxyOk) {
+        Write-Host ("SOCKS5:    ACTIVE (127.0.0.1:" + $SOCKS_PORT + ")")
+    }
+    else {
+        Write-Host "SOCKS5:    INACTIVE"
+    }
+
+    Write-Host ""
+    Write-Host ("Normal IP: " + (Get-CurrentIP))
+    if ($proxyOk) {
+        Write-Host ("WARP IP:   " + (Get-WarpIP))
+    }
+    else {
+        Write-Host "WARP IP:   proxy not active"
     }
 }
 
-function New-WireGuardConfig {
-    $ep = Get-RandomEndpoint
-    Log "Using endpoint: $ep"
-
-    $profileContent = Get-Content $WGCF_PROFILE -Raw
-    $privateKey = ($profileContent | Select-String "PrivateKey\s*=\s*(.+)").Matches[0].Groups[1].Value.Trim()
-    $publicKey = ($profileContent | Select-String "PublicKey\s*=\s*(.+)").Matches[0].Groups[1].Value.Trim()
-
-    # Windows WireGuard config (no Table/PostUp/PostDown — handled differently)
-    $config = @"
-[Interface]
-PrivateKey = $privateKey
-Address = $WARP_IP/32
-DNS = 8.8.8.8, 8.8.4.4
-MTU = 1280
-
-[Peer]
-PublicKey = $publicKey
-AllowedIPs = 0.0.0.0/0
-Endpoint = $ep
-"@
-
-    $config | Out-File -FilePath $WG_CONF -Encoding UTF8 -Force
-    Log "WireGuard config written"
+function Invoke-Down {
+    Disconnect-Warp
+    Write-Log "[OK] WARP stopped"
 }
 
-# === SOCKS5 Proxy ===
+function Invoke-Up {
+    Start-WarpService
+    Set-WarpMode
+    Set-ProxyPort
+    Connect-Warp
 
-function Start-SocksProxy {
-    if (-not (Test-Path $MICROSOCKS_EXE)) {
-        Log "WARN: microsocks not found. SOCKS5 proxy not available."
-        Log "Download from: https://github.com/nicjansma/microsocks-windows/releases"
-        return
-    }
-
-    # Check if already running
-    $existing = Get-Process -Name "microsocks*" -ErrorAction SilentlyContinue
-    if ($existing) {
-        Log "SOCKS5 proxy already running (PID: $($existing.Id))"
-        return
-    }
-
-    Log "Starting SOCKS5 proxy (${SOCKS_BIND}:${SOCKS_PORT})..."
-    Start-Process -FilePath $MICROSOCKS_EXE `
-        -ArgumentList "-i", $SOCKS_BIND, "-p", $SOCKS_PORT, "-b", $WARP_IP `
-        -WindowStyle Hidden -PassThru | Out-Null
-
-    Start-Sleep -Seconds 1
-
-    $proc = Get-Process -Name "microsocks*" -ErrorAction SilentlyContinue
-    if ($proc) {
-        Log "SOCKS5 proxy active on ${SOCKS_BIND}:${SOCKS_PORT}"
-    } else {
-        Log "WARN: SOCKS5 proxy may not have started"
-    }
-}
-
-function Stop-SocksProxy {
-    $proc = Get-Process -Name "microsocks*" -ErrorAction SilentlyContinue
-    if ($proc) {
-        Stop-Process -Name "microsocks" -Force -ErrorAction SilentlyContinue
-        Log "SOCKS5 proxy stopped"
-    }
+    Start-Sleep -Seconds 2
+    Write-Log ("Normal IP: " + (Get-CurrentIP))
+    Write-Log ("WARP IP:   " + (Get-WarpIP))
+    Write-Log "[OK] WARP started"
 }
 
 # === enowxai Integration ===
@@ -315,195 +357,136 @@ function Stop-SocksProxy {
 function Get-EnowxaiExe {
     $enowx = Get-Command "enowxai" -ErrorAction SilentlyContinue
     if ($enowx) { return $enowx.Source }
-    $local = "$env:USERPROFILE\.local\bin\enowxai.exe"
-    if (Test-Path $local) { return $local }
+    $local1 = "$env:USERPROFILE\.local\bin\enowxai.exe"
+    if (Test-Path $local1) { return $local1 }
+    $local2 = "C:\Users\$env:USERNAME\AppData\Local\Programs\enowxai\enowxai.exe"
+    if (Test-Path $local2) { return $local2 }
+    # Search in PATH and common locations
+    $found = Get-ChildItem -Path "C:\Program Files","C:\Program Files (x86)",$env:LOCALAPPDATA,$env:APPDATA -Filter "enowxai.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($found) { return $found.FullName }
     return $null
 }
 
-function Add-EnowxaiProxy {
+function Invoke-EnowxaiAdd {
     $enowx = Get-EnowxaiExe
     if (-not $enowx) {
-        Log "ERROR: enowxai not found"
+        Write-Log "ERROR: enowxai not found"
+        Write-Log "Searched: PATH, .local/bin, AppData, Program Files"
         return
     }
+    Write-Log ("Found enowxai: " + $enowx)
 
-    Log "Adding WARP proxy to enowxai..."
-    & $enowx proxy add "socks5://${SOCKS_BIND}:${SOCKS_PORT}"
+    $proxyUrl = "socks5://" + $SOCKS_BIND + ":" + $SOCKS_PORT
+    Write-Log ("Adding WARP proxy to enowxai: " + $proxyUrl)
+    & $enowx proxy add $proxyUrl 2>&1
     Write-Host ""
-    & $enowx proxy list
+    Write-Log "Current proxy list:"
+    & $enowx proxy list 2>&1
 }
 
-function Clear-EnowxaiProxy {
+function Invoke-EnowxaiClear {
     $enowx = Get-EnowxaiExe
     if (-not $enowx) {
-        Log "ERROR: enowxai not found"
+        Write-Log "ERROR: enowxai not found"
         return
     }
+    Write-Log ("Found enowxai: " + $enowx)
 
-    # Backup
+    # Backup existing proxies
     $enowxDir = "$env:USERPROFILE\.enowxai"
     $proxiesFile = "$enowxDir\proxies.json"
     if (Test-Path $proxiesFile) {
         $ts = Get-Date -Format "yyyyMMdd-HHmmss"
         $backupFile = "$enowxDir\proxies.json.bak.$ts"
         Copy-Item $proxiesFile $backupFile
-        Log "Proxy backup saved: $backupFile"
+        Write-Log ("Proxy backup saved: " + $backupFile)
     }
 
-    Log "Clearing all enowxai proxies..."
-    & $enowx proxy clear
+    Write-Log "Clearing all enowxai proxies..."
+    & $enowx proxy clear 2>&1
 
-    Log "Adding WARP proxy..."
-    & $enowx proxy add "socks5://${SOCKS_BIND}:${SOCKS_PORT}"
+    $proxyUrl = "socks5://" + $SOCKS_BIND + ":" + $SOCKS_PORT
+    Write-Log ("Adding WARP proxy: " + $proxyUrl)
+    & $enowx proxy add $proxyUrl 2>&1
 
-    & $enowx proxy test
     Write-Host ""
-    & $enowx proxy list
+    & $enowx proxy test 2>&1
     Write-Host ""
-    Log "Done! Check dashboard: http://localhost:1431/proxy"
-    if ($backupFile) {
-        Log "Rollback: Copy-Item '$backupFile' '$proxiesFile'; enowxai restart"
-    }
+    & $enowx proxy list 2>&1
+    Write-Log "[OK] enowxai now uses WARP proxy only"
 }
 
-# === Commands ===
+function Invoke-Help {
+    Write-Host @"
+warp-rotate-windows.ps1 -- Cloudflare WARP IP Rotation + SOCKS5 Proxy (Windows)
 
-function Invoke-Setup {
-    Log "=== WARP + SOCKS5 Proxy Setup (Windows) ==="
-    Install-Dependencies
-    Register-NewAccount
-    New-WireGuardConfig
-    Start-WarpTunnel
-    Start-SocksProxy
+Usage:
+  .\warp-rotate-windows.ps1 <command>
 
-    Start-Sleep -Seconds 3
-    $normalIP = Get-CurrentIP
-    $warpIP = Get-WarpIP
+Commands:
+  -Setup              First-time setup (install WARP + connect + proxy)
+  -Rotate             Rotate IP (disconnect + reconnect WARP)
+  -Check              Check current IPs (normal + WARP)
+  -Status             Full status (service, tunnel, proxy, IPs)
+  -Up                 Start WARP + proxy
+  -Down               Stop WARP + proxy
+  -EnowxaiAdd         Add WARP proxy to enowxai
+  -EnowxaiClear       Backup + clear all enowxai proxies, add WARP only
+  -Help               Show this help message
 
-    Write-Host ""
-    Log "=== Setup Complete ==="
-    Log "Normal IP:  $normalIP"
-    Log "WARP IP:    $warpIP"
-    Log "SOCKS5:     socks5://${SOCKS_BIND}:${SOCKS_PORT}"
-    Write-Host ""
-    Log "Test: curl -x socks5://${SOCKS_BIND}:${SOCKS_PORT} https://ifconfig.me"
-    Log "enowxai: .\warp-rotate.ps1 -EnowxaiAdd"
-}
+Config:
+  SOCKS5 Proxy:       127.0.0.1:40000
+  WARP Client:        Cloudflare WARP (warp-cli.exe)
+  Mode:               Proxy (SOCKS5)
 
-function Invoke-Rotate {
-    $oldIP = Get-WarpIP
-    Log "Current WARP IP: $oldIP"
+Examples:
+  .\warp-rotate-windows.ps1 -Setup
+  .\warp-rotate-windows.ps1 -Rotate
+  .\warp-rotate-windows.ps1 -Check
+  .\warp-rotate-windows.ps1 -EnowxaiAdd
+  curl -x socks5://127.0.0.1:40000 https://ifconfig.me
 
-    Stop-SocksProxy
-    Stop-WarpTunnel
-    Register-NewAccount
-    New-WireGuardConfig
-    Start-WarpTunnel
-    Start-SocksProxy
+Note:
+  Run as Administrator. If blocked by Execution Policy:
+  powershell -ExecutionPolicy Bypass -File .\warp-rotate-windows.ps1 -Setup
 
-    Start-Sleep -Seconds 3
-    $newIP = Get-WarpIP
-    Log "New WARP IP: $newIP"
+Requirements:
+  - Cloudflare WARP for Windows (auto-installed on -Setup)
+  - Administrator privileges
+  - curl.exe (included in Windows 10/11)
 
-    if ($oldIP -ne $newIP -and $newIP -ne "not active") {
-        Log "IP rotated: $oldIP -> $newIP"
-    } elseif ($newIP -ne "not active") {
-        Log "IP: $newIP (may be same — Cloudflare assigns server)"
-    } else {
-        Log "Failed to get new IP"
-    }
-}
-
-function Invoke-Status {
-    Write-Host "=== WARP Status (Windows) ==="
-    $wg = Get-WgExe
-    if ($wg) {
-        $show = & "$wg" show $TUNNEL_NAME 2>$null
-        if ($show) {
-            Write-Host "Tunnel:  ACTIVE"
-        } else {
-            Write-Host "Tunnel:  INACTIVE"
-        }
-    } else {
-        Write-Host "Tunnel:  WireGuard not found"
-    }
-
-    $proc = Get-Process -Name "microsocks*" -ErrorAction SilentlyContinue
-    if ($proc) {
-        Write-Host "SOCKS5:  ACTIVE (${SOCKS_BIND}:${SOCKS_PORT})"
-    } else {
-        Write-Host "SOCKS5:  INACTIVE"
-    }
-
-    Write-Host ""
-    Write-Host "Normal IP: $(Get-CurrentIP)"
-    Write-Host "WARP IP:   $(Get-WarpIP)"
-    Write-Host ""
-
-    if (Test-Path $WGCF_ACCOUNT) {
-        Write-Host "Account: $WGCF_ACCOUNT (exists)"
-    } else {
-        Write-Host "Account: not registered"
-    }
-    if (Test-Path $WG_CONF) {
-        Write-Host "Config:  $WG_CONF (exists)"
-    }
-}
-
-function Invoke-Loop($interval) {
-    Log "Auto-rotate mode: every $interval seconds"
-    while ($true) {
-        Invoke-Rotate
-        Log "Next rotation in $interval seconds..."
-        Start-Sleep -Seconds $interval
-    }
+Repo: https://github.com/ocdewe/warp-rotate
+"@
 }
 
 # === Main ===
-
 if ($Setup) {
     Invoke-Setup
-} elseif ($Rotate) {
+}
+elseif ($Rotate) {
     Invoke-Rotate
-} elseif ($Check) {
-    Write-Host "Normal IP: $(Get-CurrentIP)"
-    Write-Host "WARP IP:   $(Get-WarpIP)"
-} elseif ($Status) {
+}
+elseif ($Check) {
+    Invoke-Check
+}
+elseif ($Status) {
     Invoke-Status
-} elseif ($Up) {
-    Start-WarpTunnel
-    Start-SocksProxy
-    Start-Sleep -Seconds 2
-    Log "Normal IP: $(Get-CurrentIP)"
-    Log "WARP IP:   $(Get-WarpIP)"
-} elseif ($Down) {
-    Stop-SocksProxy
-    Stop-WarpTunnel
-    Log "WARP + proxy stopped"
-} elseif ($EnowxaiAdd) {
-    Add-EnowxaiProxy
-} elseif ($EnowxaiClear) {
-    Clear-EnowxaiProxy
-} elseif ($Loop -gt 0) {
-    Invoke-Loop $Loop
-} else {
-    # Default: show help
-    Write-Host @"
-WARP Rotate for Windows — Cloudflare WARP IP Rotation + SOCKS5 Proxy
-
-Usage:
-  .\warp-rotate.ps1 -Setup          First-time setup (install + connect + proxy)
-  .\warp-rotate.ps1 -Rotate         Rotate IP (re-register WARP)
-  .\warp-rotate.ps1 -Check          Check current IPs (normal + WARP)
-  .\warp-rotate.ps1 -Status         Full status
-  .\warp-rotate.ps1 -Up             Start WARP + proxy
-  .\warp-rotate.ps1 -Down           Stop WARP + proxy
-  .\warp-rotate.ps1 -Loop 3600      Auto-rotate every N seconds
-  .\warp-rotate.ps1 -EnowxaiAdd     Add WARP proxy to enowxai
-  .\warp-rotate.ps1 -EnowxaiClear   Backup + clear + add WARP to enowxai
-
-Requirements:
-  - WireGuard for Windows (https://www.wireguard.com/install/)
-  - Run as Administrator
-"@
+}
+elseif ($Down) {
+    Invoke-Down
+}
+elseif ($Up) {
+    Invoke-Up
+}
+elseif ($EnowxaiAdd) {
+    Invoke-EnowxaiAdd
+}
+elseif ($EnowxaiClear) {
+    Invoke-EnowxaiClear
+}
+elseif ($Help) {
+    Invoke-Help
+}
+else {
+    Invoke-Help
 }
