@@ -6,9 +6,12 @@
     .\warp-rotate.ps1 -Setup
     .\warp-rotate.ps1 -Rotate
     .\warp-rotate.ps1 -Check
+    .\warp-rotate.ps1 -Loop <in seconds>
     .\warp-rotate.ps1 -Status
     .\warp-rotate.ps1 -Up
     .\warp-rotate.ps1 -Down
+    .\warp-rotate.ps1 -EnowxaiAdd
+    .\warp-rotate.ps1 -EnowxaiClear
 #>
 
 param(
@@ -428,6 +431,7 @@ Commands:
   -Rotate             Rotate IP (disconnect + reconnect WARP)
   -Check              Check current IPs (normal + WARP)
   -Status             Full status (service, tunnel, proxy, IPs)
+  -Loop 3600          Auto-rotate every hour (in seconds)
   -Up                 Start WARP + proxy
   -Down               Stop WARP + proxy
   -EnowxaiAdd         Add WARP proxy to enowxai
